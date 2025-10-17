@@ -1,0 +1,39 @@
+pipeline {
+    agent any
+
+    environment {
+        GIT_SSL_NO_VERIFY = 'true'  // SSL verify ignore
+    }
+
+    stages {
+        stage('Clone') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'gitlab-user-jks-pw', 
+                        usernameVariable: 'USER', 
+                        passwordVariable: 'TOKEN'
+                    )
+                ]) {
+                    sh '''
+                        git config --global http.sslVerify false
+                        rm -rf java-project       # 이전 빌드 잔여물 삭제
+                        git clone https://${USER}:${TOKEN}@192.168.0.12:7743/JKS/java-project.git
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ 전체 Pipeline 성공"
+        }
+        failure {
+            echo "❌ Pipeline 실패"
+        }
+        always {
+            echo "🔄 Pipeline 종료"
+        }
+    }
+}

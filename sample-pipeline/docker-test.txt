@@ -1,0 +1,66 @@
+pipeline {
+    agent any
+
+    environment {
+        GIT_SSL_NO_VERIFY = 'true'
+        REGISTRY_URL = '192.168.0.12:7743/keycloak'
+        IMAGE_NAME = 'keycloak-docker'
+        IMAGE_TAG = 'latest'
+    }
+
+    stages {
+        stage('Git Clone') {
+            steps {
+                withEnv(['GIT_SSL_NO_VERIFY=true']) {
+                    withCredentials([usernamePassword(credentialsId: 'gitlab-user-jks-pw', usernameVariable: 'USER', passwordVariable: 'TOKEN')]) {
+                        sh '''
+                            echo "=== [1/3] Git Clone ==="
+                            git config --global http.sslVerify false
+                            rm -rf keycloak-docker    #이전 빌드 잔여물 삭제
+                            git clone https://${USER}:${TOKEN}@192.168.0.12:7743/keycloak/keycloak-docker.git
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Docker Build'){
+            steps{
+                script {
+                    sh '''
+                        echo "=== [2/3] Docker Build ==="
+                        cd keycloak-docker
+                        docker build -t ${REGISTRY_URL}/${IMAGE_NAME}:${IMAGE_TAG} .
+                    '''
+                }
+            }
+        }
+
+        stage('Docker Run Test'){
+            steps {
+                script {
+                    sh'''
+                        echo "=== [3/3] Docker Run ==="
+                        docker rm -f keycloak-docker || true
+                        docker run -d --name keycloak-docker -p 8443:8443 ${REGISTRY_URL}/${IMAGE_NAME}:${IMAGE_TAG} \
+                        start-dev --https-port=8443
+                        sleep 15
+                        docker logs keycloak-docker | head -n 30
+                        docker stop keycloak-docker
+                        docker rm -f keycloak-docker
+                    '''
+                }
+            }
+        }
+
+    }
+
+    post {
+        always {
+            sh '''
+                echo "=== [Cleanup] Remove dangling images ==="
+                docker image prune -f || true
+            '''
+        }   
+    }
+}

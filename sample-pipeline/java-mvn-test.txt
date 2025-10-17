@@ -1,0 +1,64 @@
+pipeline {
+    agent {
+        docker {
+            image 'maven:3.9.9-eclipse-temurin-21' // Java + Maven Image
+            args '-v $HOME/.m2:/root/.m2'
+        }
+    }
+
+    environment {
+        GIT_SSL_NO_VERIFY = 'true'  // SSL verify ignore
+    }
+
+    stages {
+    
+        stage('Clone') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'gitlab-user-jks-pw', 
+                        usernameVariable: 'USER', 
+                        passwordVariable: 'TOKEN'
+                    )
+                ]) {
+                    sh '''
+                        echo "=== [1/2] Git Clone ==="
+                        git config --global http.sslVerify false
+                        rm -rf java-project       # 이전 빌드 잔여물 삭제
+                        git clone https://${USER}:${TOKEN}@192.168.0.12:7743/JKS/java-project.git
+                    '''
+                }
+            }
+        }
+
+        stage('Java Build and RUN') {
+            steps {
+                dir('java-project') {  // Clone된 프로젝트 디렉토리로 이동
+                    script {
+                        echo "=== [2/2] Maven Build ==="
+                        sh '''
+                            # Maven Build and RUN
+                            mvn clean 
+                            mvn compile
+                            mvn test
+                            mvn exec:java
+                            mvn clean
+                        '''
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ 전체 Pipeline 성공"
+        }
+        failure {
+            echo "❌ Pipeline 실패"
+        }
+        always {
+            echo "🔄 Pipeline 종료"
+        }
+    }
+}
