@@ -1,0 +1,102 @@
+pipeline {
+    agent {
+        docker {
+            image 'gcc:14'
+            args '-v $HOME/.cache:/root/.cache -u root'
+        }
+    }
+    environment {
+        GIT_SSL_NO_VERIFY = 'true'
+    }
+    stages {
+        
+        stage('Install Dependencies') {
+            steps {
+                sh '''
+                    echo "=== 라이브러리 설치 ==="
+                    apt-get update
+                    apt-get install -y \
+                        libssl-dev \
+                        libcrypto++-dev \
+                        libjsoncpp-dev \
+                        make \
+                        pkg-config \
+                        git
+                    
+                    ldconfig
+                    
+                    echo "✅ 설치 완료"
+                '''
+            }
+        }
+        
+        stage('Clone') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'gitlab-user-jks-pw', 
+                        usernameVariable: 'USER', 
+                        passwordVariable: 'TOKEN'
+                    )
+                ]) {
+                    sh '''
+                        echo "=== Git Clone 시작 ==="
+                        git config --global http.sslVerify false
+                        rm -rf openssl-cplus
+                        git clone https://${USER}:${TOKEN}@192.168.0.12:7743/JKS/openssl-cplus.git
+                        echo "✅ Clone 성공"
+                    '''
+                }
+            }
+        }
+        
+        stage('Make Clean') {
+            steps {
+                dir('openssl-cplus') {
+                    sh '''
+                        echo "=== Make Clean 시작 ==="
+                        make clean
+                        echo "✅ Clean 완료"
+                    '''
+                }
+            }
+        }
+        
+        stage('Make Build') {
+            steps {
+                dir('openssl-cplus') {
+                    sh '''
+                        echo "=== Make Build 시작 ==="
+                        make
+                        echo "✅ 빌드 성공"
+                    '''
+                }
+            }
+        }
+        
+        stage('Run Program') {
+            steps {
+                dir('openssl-cplus') {
+                    sh '''
+                        echo "=== 프로그램 실행 ==="
+                        echo "-----------------------------------"
+                        ./program-service
+                        echo "-----------------------------------"
+                        echo "✅ 실행 완료"
+                    '''
+                }
+            }
+        }
+    }
+    post {
+        success {
+            echo "✅ Pipeline 성공"
+        }
+        failure {
+            echo "❌ Pipeline 실패"
+        }
+        always {
+            echo "🔄 Pipeline 종료"
+        }
+    }
+}
